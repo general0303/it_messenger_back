@@ -77,7 +77,8 @@ def get_current_user():
     invites = []
     for invite in current_user.invitations:
         chat = Chat.query.get(invite.chat_id)
-        invites.append({'invite_id': invite.id, 'chat_id': chat.id, 'chat_name': chat.name, 'chat_image': chat.image, 'admin':
+        invites.append(
+            {'invite_id': invite.id, 'chat_id': chat.id, 'chat_name': chat.name, 'chat_image': chat.image, 'admin':
                 {'username': chat.admin.username, 'email': chat.admin.email, 'last_seen': chat.admin.last_seen}})
     data['invites'] = invites
     current_user.last_seen = datetime.now()
@@ -139,6 +140,17 @@ def method_chat(chat_id):
         current_user.last_seen = datetime.now()
         db.session.commit()
         return 'Deleted', 204
+
+
+@app.route('/chats/<chat_id>/left', methods=['DELETE'])
+@jwt_required()
+def left(chat_id):
+    chat = Chat.query.get(chat_id)
+    if current_user.id == chat.admin.id:
+        abort(400)
+    current_user.chats.remove(chat)
+    db.session.commit()
+    return 'deleted', 204
 
 
 @app.route('/invitation', methods=['POST'])
