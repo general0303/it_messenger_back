@@ -216,10 +216,9 @@ def chat_user(chat_id):
 @app.route('/chats/<chat_id>/message', methods=['POST'])
 @jwt_required()
 def write_message(chat_id):
-    user_id = str(request.form['user_id'])
     chat = Chat.query.get(chat_id)
-    user = User.query.get(user_id)
-    body = str(request.form['body'])
+    user = current_user
+    body = request.get_json()['body']
     message = Message(body=body)
     message.author = user
     message.chat = chat
