@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import uuid
 
 from flask import request, jsonify, abort, send_file
 
@@ -226,7 +227,7 @@ def write_message(chat_id):
     db.session.add(message)
     current_user.last_seen = datetime.now()
     db.session.commit()
-    return 'Created', 201
+    return {'message_id': message.id}, 201
 
 
 @app.route('/messages/<message_id>', methods=['GET', 'PUT', 'DELETE'])
@@ -258,7 +259,7 @@ def method_message(message_id):
 def chat_messages(chat_id):
     chat = Chat.query.get(chat_id)
     data = [{'id': message.id, 'author': {'username': message.author.username}, 'body': message.body,
-             'timestamp': message.timestamp}
+             'timestamp': message.timestamp, 'attachments': [{'link': attachment.path} for attachment in message.attachments]}
             for message in chat.posts]
     current_user.last_seen = datetime.now()
     db.session.commit()
@@ -267,5 +268,41 @@ def chat_messages(chat_id):
 
 @app.route('/static/chats/<chat_id>/image.png')
 def image(chat_id):
-    path = f'/static/chats/{chat_id}/image.png'
+    path = f'static/files/chats/{chat_id}/image.png'
     return send_file(path, mimetype='image/png')
+
+
+@app.route('/create_attachment', methods=['POST'])
+@jwt_required()
+def create_attachment():
+    chat_id = str(request.form['chat_id'])
+    message = Message(body="")
+    message.author = current_user
+    message.chat = Chat.query.get(chat_id)
+    db.session.add(message)
+    db.session.commit()
+    print(request.files.getlist('file'))
+    if 'file' in request.files:
+        for file in request.files.getlist('file'):
+            if file.filename != "":
+                path = os.path.join(app.config['UPLOAD_FOLDER'], f'chats/{chat_id}/messages')
+                if not os.path.exists(path):
+                    os.mkdir(path)
+                path = os.path.join(app.config['UPLOAD_FOLDER'], f'chats/{chat_id}/messages/{message.id}')
+                if not os.path.exists(path):
+                    os.mkdir(path)
+                filename = f'{uuid.uuid4().hex[0:10]}.{file.filename.rsplit(".", 1)[1].lower()}'
+                file.save(os.path.join(path, filename))
+                link = f'{path}/{filename}'
+                link = link[2:].replace(r'\c', '/c')
+                attachment = Attachment(path=link)
+                db.session.add(attachment)
+                attachment.message = message
+            db.session.commit()
+    return 'Created', 201
+
+
+@app.route('/static/chats/<chat_id>/messages/<message_id>/<filename>')
+def get_image(chat_id, message_id, filename):
+    path = f'static/files/chats/{chat_id}/messages/{message_id}/{filename}'
+    return send_file(path)
