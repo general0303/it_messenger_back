@@ -34,6 +34,8 @@ def registration():
     username = request.get_json()['username']
     email = request.get_json()['email']
     password = request.get_json()['password']
+    if User.query.filter_by(username=username).first():
+        abort(400)
     user = User(username=username, email=email)
     user.set_password(password)
     db.session.add(user)
