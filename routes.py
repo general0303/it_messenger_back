@@ -69,6 +69,15 @@ def method_user(user_id):
         return 'Updated', 200
 
 
+@app.route('/chat_users/<chat_id>')
+def all_users(chat_id):
+    users = User.query.all()
+    chat = Chat.query.get(chat_id)
+    users = list(set(users)-set(chat.users))
+    data = {'users': [{'user_id': user.id, 'username': user. username} for user in users]}
+    return data
+
+
 @app.route('/current_user')
 @jwt_required()
 def get_current_user():
@@ -159,8 +168,8 @@ def left(chat_id):
 @app.route('/invitation', methods=['POST'])
 @jwt_required()
 def create_invitation():
-    user_id = str(request.form['user_id'])
-    chat_id = str(request.form['chat_id'])
+    user_id = request.get_json()['user_id']
+    chat_id = request.get_json()['chat_id']
     chat = Chat.query.get(chat_id)
     user = User.query.get(user_id)
     invitation = Invitation()
