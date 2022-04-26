@@ -39,3 +39,17 @@ class TestRegistration:
         response = requests.post('http://localhost:5000/registration', json={'username': username, 'email': email,
                                                                              'password': password})
         assert response.status_code == 400
+
+
+class TestCurrentUser:
+    def test_valid_current_user(self):
+        jwt_token = get_token()
+        response = requests.get('http://localhost:5000/current_user', headers={'Authorization': f'Bearer {jwt_token}'})
+        assert response.status_code == 200
+        assert 'username', 'email' in response.json()
+        assert 'last_seen', 'chats' in response.json()
+        assert 'invites' in response.json()
+
+    def test_invalid_current_user(self):
+        response = requests.get('http://localhost:5000/current_user')
+        assert response.status_code == 401
