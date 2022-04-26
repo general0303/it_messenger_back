@@ -41,6 +41,8 @@ def registration():
     db.session.add(user)
     db.session.commit()
     user = User.query.filter_by(username=username).first()
+    path = os.path.join(app.config['UPLOAD_FOLDER'], f'users/{user.id}')
+    os.mkdir(path)
     access_token = create_access_token(identity={
         'id': user.id,
     }, expires_delta=False)
@@ -53,7 +55,8 @@ def registration():
 def method_user(user_id):
     user = User.query.get(user_id)
     if request.method == 'GET':
-        data = {'username': user.username, 'email': user.email, 'last_seen': user.last_seen}
+        data = {'username': user.username, 'email': user.email, 'last_seen':
+            abs(round((datetime.now() - user.last_seen).total_seconds()/60)), 'avatar': user.avatar}
         current_user.last_seen = datetime.now()
         db.session.commit()
         return jsonify(data)
@@ -109,11 +112,11 @@ def create_chat():
     current_user.last_seen = datetime.now()
     db.session.commit()
     chat = Chat.query.filter_by(name=name).first()
+    path = os.path.join(app.config['UPLOAD_FOLDER'], f'chats/{chat.id}')
+    os.mkdir(path)
     if 'file' in request.files:
         file = request.files['file']
         if file.filename != "":
-            path = os.path.join(app.config['UPLOAD_FOLDER'], f'chats/{chat.id}')
-            os.mkdir(path)
             filename = f'image.{file.filename.rsplit(".", 1)[1].lower()}'
             file.save(os.path.join(path, filename))
             chat_image = f'{path}/{filename}'

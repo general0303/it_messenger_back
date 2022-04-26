@@ -23,6 +23,7 @@ class User(db.Model):
     admin_chats = db.relationship('Chat', backref='admin', lazy='dynamic')
     invitations = db.relationship('Invitation', backref='user', lazy='dynamic')
     last_seen = db.Column(db.DateTime, default=datetime.now(pytz.timezone('Europe/Moscow')))
+    avatar = db.Column(db.String(64), default=None)
 
     def __repr__(self):
         return '<User {}>'.format(self.username)
