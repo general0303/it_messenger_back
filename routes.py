@@ -73,8 +73,8 @@ def method_user(user_id):
 def all_users(chat_id):
     users = User.query.all()
     chat = Chat.query.get(chat_id)
-    users = list(set(users)-set(chat.users))
-    data = {'users': [{'user_id': user.id, 'username': user. username} for user in users]}
+    users = list(set(users) - set(chat.users))
+    data = {'users': [{'user_id': user.id, 'username': user.username} for user in users]}
     return data
 
 
@@ -127,7 +127,8 @@ def create_chat():
 def get_chat(chat_id):
     chat = Chat.query.get(chat_id)
     data = {'name': chat.name, 'image': chat.image, 'admin':
-        {'username': chat.admin.username, 'email': chat.admin.email, 'last_seen': chat.admin.last_seen}}
+        {'admin_id': chat.admin.id, 'username': chat.admin.username, 'email': chat.admin.email, 'last_seen':
+            chat.admin.last_seen}}
     current_user.last_seen = datetime.now()
     db.session.commit()
     return jsonify(data)
@@ -171,6 +172,8 @@ def create_invitation():
     user_id = request.get_json()['user_id']
     chat_id = request.get_json()['chat_id']
     chat = Chat.query.get(chat_id)
+    if current_user != chat.admin:
+        abort(403)
     user = User.query.get(user_id)
     invitation = Invitation()
     invitation.user = user
@@ -270,7 +273,8 @@ def method_message(message_id):
 def chat_messages(chat_id):
     chat = Chat.query.get(chat_id)
     data = [{'id': message.id, 'author': {'username': message.author.username}, 'body': message.body,
-             'timestamp': message.timestamp, 'attachments': [{'link': attachment.path} for attachment in message.attachments]}
+             'timestamp': message.timestamp,
+             'attachments': [{'link': attachment.path} for attachment in message.attachments]}
             for message in chat.posts]
     current_user.last_seen = datetime.now()
     db.session.commit()
