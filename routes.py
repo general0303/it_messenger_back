@@ -302,7 +302,7 @@ def method_message(message_id):
         return jsonify(data)
     elif request.method == 'PUT':
         if current_user == message.author:
-            body = str(request.form['body'])
+            body = request.get_json()['body']
             message.body = body
             current_user.last_seen = datetime.now()
             db.session.commit()
