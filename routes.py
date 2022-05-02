@@ -36,6 +36,8 @@ def registration():
     password = request.get_json()['password']
     if User.query.filter_by(username=username).first():
         abort(400)
+    if User.query.filter_by(email=email).first():
+        abort(400)
     user = User(username=username, email=email)
     user.set_password(password)
     db.session.add(user)
@@ -46,59 +48,72 @@ def registration():
     access_token = create_access_token(identity={
         'id': user.id,
     }, expires_delta=False)
-    result = {'token': access_token}
-    return result
+    result = {'id': user.id, 'token': access_token}
+    return result, 201
 
 
-@app.route('/users/<user_id>', methods=['GET', 'PUT'])
+@app.route('/users/<user_id>')
 @jwt_required()
-def method_user(user_id):
+def get_user(user_id):
     user = User.query.get(user_id)
-    if request.method == 'GET':
-        data = {'username': user.username, 'email': user.email, 'last_seen':
-            abs(round((datetime.now() - user.last_seen).total_seconds()/60)), 'avatar': user.avatar}
-        current_user.last_seen = datetime.now()
-        db.session.commit()
-        return jsonify(data)
-    else:
-        username = str(request.form['username'])
-        email = str(request.form['email'])
-        password = str(request.form['password'])
-        user.username = username
-        user.email = email
-        user.set_password(password)
-        current_user.last_seen = datetime.now()
-        db.session.commit()
-        return 'Updated', 200
+    if user is None:
+        abort(404)
+    data = {'username': user.username, 'email': user.email, 'last_seen':
+        abs(round((datetime.now() - user.last_seen).total_seconds() / 60)), 'avatar': user.avatar}
+    current_user.last_seen = datetime.now()
+    db.session.commit()
+    return jsonify(data)
 
 
 @app.route('/chat_users/<chat_id>')
-def all_users(chat_id):
+def all_users_not_in_chat(chat_id):
     users = User.query.all()
     chat = Chat.query.get(chat_id)
+    if chat is None:
+        abort(404)
     users = list(set(users) - set(chat.users))
     data = {'users': [{'user_id': user.id, 'username': user.username} for user in users]}
     return data
 
 
-@app.route('/current_user')
+@app.route('/current_user', methods=['GET', 'PUT'])
 @jwt_required()
 def get_current_user():
-    user = current_user
-    data = {'username': user.username, 'email': user.email, 'last_seen': user.last_seen,
-            'chats': [{'chat_id': chat.id, 'chat_name': chat.name, 'chat_image': chat.image, 'admin':
-                {'username': chat.admin.username, 'email': chat.admin.email, 'last_seen': chat.admin.last_seen}}
-                      for chat in user.chats]}
-    invites = []
-    for invite in current_user.invitations:
-        chat = Chat.query.get(invite.chat_id)
-        invites.append(
-            {'invite_id': invite.id, 'chat_id': chat.id, 'chat_name': chat.name, 'chat_image': chat.image, 'admin':
-                {'username': chat.admin.username, 'email': chat.admin.email, 'last_seen': chat.admin.last_seen}})
-    data['invites'] = invites
-    current_user.last_seen = datetime.now()
-    db.session.commit()
-    return jsonify(data)
+    if request.method == 'GET':
+        user = current_user
+        data = {'username': user.username, 'email': user.email, 'last_seen': user.last_seen, 'avatar': user.avatar,
+                'chats': [{'chat_id': chat.id, 'chat_name': chat.name, 'chat_image': chat.image, 'admin':
+                    {'username': chat.admin.username, 'email': chat.admin.email, 'last_seen': chat.admin.last_seen}}
+                          for chat in user.chats]}
+        invites = []
+        for invite in current_user.invitations:
+            chat = Chat.query.get(invite.chat_id)
+            invites.append(
+                {'invite_id': invite.id, 'chat_id': chat.id, 'chat_name': chat.name, 'chat_image': chat.image, 'admin':
+                    {'username': chat.admin.username, 'email': chat.admin.email, 'last_seen': chat.admin.last_seen}})
+        data['invites'] = invites
+        current_user.last_seen = datetime.now()
+        db.session.commit()
+        return jsonify(data)
+    else:
+        username = str(request.form['username'])
+        #email = str(request.form['email'])
+        #password = str(request.form['password'])
+        current_user.username = username
+        #current_user.email = email
+        #current_user.set_password(password)
+        current_user.last_seen = datetime.now()
+        path = os.path.join(app.config['UPLOAD_FOLDER'], f'users/{current_user.id}')
+        if 'file' in request.files:
+            file = request.files['file']
+            if file.filename != "":
+                filename = f'image.{file.filename.rsplit(".", 1)[1].lower()}'
+                file.save(os.path.join(path, filename))
+                avatar = f'{path}/{filename}'
+                current_user.avatar = avatar[2:].replace(r'\u', '/u')
+                db.session.commit()
+        db.session.commit()
+        return 'Updated', 200
 
 
 @app.route('/chat', methods=['POST'])
@@ -129,6 +144,8 @@ def create_chat():
 @jwt_required()
 def get_chat(chat_id):
     chat = Chat.query.get(chat_id)
+    if chat is None:
+        abort(404)
     data = {'name': chat.name, 'image': chat.image, 'admin':
         {'admin_id': chat.admin.id, 'username': chat.admin.username, 'email': chat.admin.email, 'last_seen':
             chat.admin.last_seen}}
@@ -141,6 +158,8 @@ def get_chat(chat_id):
 @jwt_required()
 def method_chat(chat_id):
     chat = Chat.query.get(chat_id)
+    if chat is None:
+        abort(404)
     if current_user != chat.admin:
         current_user.last_seen = datetime.now()
         db.session.commit()
@@ -162,6 +181,10 @@ def method_chat(chat_id):
 @jwt_required()
 def left(chat_id):
     chat = Chat.query.get(chat_id)
+    if chat is None:
+        abort(404)
+    if current_user not in chat.users:
+        abort(400)
     if current_user.id == chat.admin.id:
         abort(400)
     current_user.chats.remove(chat)
@@ -175,9 +198,13 @@ def create_invitation():
     user_id = request.get_json()['user_id']
     chat_id = request.get_json()['chat_id']
     chat = Chat.query.get(chat_id)
+    if chat is None:
+        abort(404)
     if current_user != chat.admin:
         abort(403)
     user = User.query.get(user_id)
+    if user is None:
+        abort(404)
     invitation = Invitation()
     invitation.user = user
     invitation.chat = chat
@@ -191,6 +218,10 @@ def create_invitation():
 @jwt_required()
 def accept_the_invitation(invitation_id):
     invitation = Invitation.query.get(int(invitation_id))
+    if invitation is None:
+        abort(404)
+    if current_user != invitation.user:
+        abort(403)
     invitation.user.chats.append(invitation.chat)
     db.session.delete(invitation)
     current_user.last_seen = datetime.now()
@@ -202,6 +233,10 @@ def accept_the_invitation(invitation_id):
 @jwt_required()
 def decline_the_invitation(invitation_id):
     invitation = Invitation.query.get(invitation_id)
+    if invitation is None:
+        abort(404)
+    if current_user != invitation.user:
+        abort(403)
     db.session.delete(invitation)
     current_user.last_seen = datetime.now()
     db.session.commit()
@@ -212,10 +247,11 @@ def decline_the_invitation(invitation_id):
 @jwt_required()
 def user_chat(user_id):
     user = User.query.get(user_id)
+    if user is None:
+        abort(404)
     data = [{'chat_id': chat.id, 'chat_name': chat.name, 'chat_image': chat.image, 'admin':
         {'username': chat.admin.username, 'email': chat.admin.email, 'last_seen': chat.admin.last_seen}}
-            for chat in
-            user.chats]
+            for chat in user.chats]
     current_user.last_seen = datetime.now()
     db.session.commit()
     return jsonify(data)
@@ -225,6 +261,8 @@ def user_chat(user_id):
 @jwt_required()
 def chat_user(chat_id):
     chat = Chat.query.get(chat_id)
+    if chat is None:
+        abort(404)
     data = [{'user_id': user.id, 'username': user.username} for user in chat.users]
     current_user.last_seen = datetime.now()
     db.session.commit()
@@ -235,7 +273,11 @@ def chat_user(chat_id):
 @jwt_required()
 def write_message(chat_id):
     chat = Chat.query.get(chat_id)
+    if chat is None:
+        abort(404)
     user = current_user
+    if user not in chat.users:
+        abort(403)
     body = request.get_json()['body']
     message = Message(body=body)
     message.author = user
@@ -251,6 +293,8 @@ def write_message(chat_id):
 @jwt_required()
 def method_message(message_id):
     message = Message.query.get(message_id)
+    if message is None:
+        abort(404)
     if request.method == 'GET':
         data = {'author': {'username': message.author.username}, 'body': message.body, 'timestamp': message.timestamp}
         current_user.last_seen = datetime.now()
@@ -262,19 +306,25 @@ def method_message(message_id):
             message.body = body
             current_user.last_seen = datetime.now()
             db.session.commit()
-        return 'Updated', 200
+            return 'Updated', 200
+        else:
+            abort(403)
     else:
         if current_user == message.author:
             db.session.delete(message)
             current_user.last_seen = datetime.now()
             db.session.commit()
-        return 'Deleted', 204
+            return 'Deleted', 204
+        else:
+            abort(403)
 
 
 @app.route('/chats/<chat_id>/messages')
 @jwt_required()
 def chat_messages(chat_id):
     chat = Chat.query.get(chat_id)
+    if chat is None:
+        abort(404)
     data = [{'id': message.id, 'author': {'username': message.author.username}, 'body': message.body,
              'timestamp': message.timestamp,
              'attachments': [{'link': attachment.path} for attachment in message.attachments]}
@@ -287,16 +337,31 @@ def chat_messages(chat_id):
 @app.route('/static/chats/<chat_id>/image.png')
 def image(chat_id):
     path = f'static/files/chats/{chat_id}/image.png'
-    return send_file(path, mimetype='image/png')
+    if os.path.exists(path):
+        return send_file(path, mimetype='image/png')
+    else:
+        abort(404)
+
+
+@app.route('/static/users/<user_id>/image.png')
+def user_avatar(user_id):
+    path = f'static/files/users/{user_id}/image.png'
+    if os.path.exists(path):
+        return send_file(path, mimetype='image/png')
+    else:
+        abort(404)
 
 
 @app.route('/create_attachment', methods=['POST'])
 @jwt_required()
 def create_attachment():
     chat_id = str(request.form['chat_id'])
+    chat = Chat.query.get(chat_id)
+    if chat is None:
+        abort(400)
     message = Message(body="")
     message.author = current_user
-    message.chat = Chat.query.get(chat_id)
+    message.chat = chat
     db.session.add(message)
     db.session.commit()
     print(request.files.getlist('file'))
@@ -321,6 +386,9 @@ def create_attachment():
 
 
 @app.route('/static/chats/<chat_id>/messages/<message_id>/<filename>')
-def get_image(chat_id, message_id, filename):
+def get_file(chat_id, message_id, filename):
     path = f'static/files/chats/{chat_id}/messages/{message_id}/{filename}'
-    return send_file(path)
+    if os.path.exists(path):
+        return send_file(path)
+    else:
+        abort(404)
